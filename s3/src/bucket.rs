@@ -24,7 +24,7 @@ use crate::surf_request::SurfRequest as RequestImpl;
 // use tokio::fs::File;
 
 #[cfg(feature = "with-async-std")]
-use futures::io::AsyncRead;
+use futures_io::AsyncRead;
 #[cfg(feature = "with-tokio")]
 use tokio::io::AsyncRead;
 
@@ -689,7 +689,7 @@ impl Bucket {
     /// #[cfg(feature = "with-async-std")]
     /// let mut path = async_std::fs::File::open(path).await?;
     /// // Async variant with `tokio` or `async-std` features
-    /// // Generic over futures::io::AsyncRead|tokio::io::AsyncRead + Unpin
+    /// // Generic over futures_io::AsyncRead|tokio::io::AsyncRead + Unpin
     /// let status_code = bucket.put_object_stream(&mut path, "/path").await?;
     ///
     /// // `sync` feature will produce an identical method
