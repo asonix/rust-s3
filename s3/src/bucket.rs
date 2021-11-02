@@ -7,6 +7,7 @@ use std::mem;
 use std::time::Duration;
 
 use crate::bucket_ops::{BucketConfiguration, CreateBucketResponse};
+use crate::client::Client;
 use crate::command::{Command, Multipart};
 use crate::creds::Credentials;
 use crate::region::Region;
@@ -14,10 +15,6 @@ use std::str::FromStr;
 
 pub type Query = HashMap<String, String>;
 
-#[cfg(feature = "with-tokio")]
-use crate::request::Reqwest as RequestImpl;
-#[cfg(feature = "with-async-std")]
-use crate::surf_request::SurfRequest as RequestImpl;
 // #[cfg(feature = "with-async-std")]
 // use async_std::{fs::File, path::Path};
 // #[cfg(feature = "with-tokio")]
@@ -27,9 +24,6 @@ use crate::surf_request::SurfRequest as RequestImpl;
 use futures::io::AsyncRead;
 #[cfg(feature = "with-tokio")]
 use tokio::io::AsyncRead;
-
-#[cfg(feature = "sync")]
-use crate::blocking::AttoRequest as RequestImpl;
 // #[cfg(feature = "sync")]
 // use std::fs::File;
 #[cfg(feature = "sync")]
@@ -118,13 +112,24 @@ impl Bucket {
     /// let region = "us-east-1".parse().unwrap();
     /// let credentials = Credentials::default().unwrap();
     /// let bucket = Bucket::new(bucket_name, region, credentials).unwrap();
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
-    /// let url = bucket.presign_get("/test.file", 86400).unwrap();
+    /// let url = bucket.presign_get(&client, "/test.file", 86400).unwrap();
     /// println!("Presigned url: {}", url);
     /// ```
-    pub fn presign_get<S: AsRef<str>>(&self, path: S, expiry_secs: u32) -> Result<String> {
+    pub fn presign_get<C: for<'a> Client<'a>, S: AsRef<str>>(
+        &self,
+        client: &C,
+        path: S,
+        expiry_secs: u32,
+    ) -> Result<String> {
         validate_expiry(expiry_secs)?;
-        let request = RequestImpl::new(self, path.as_ref(), Command::PresignGet { expiry_secs });
+        let request = client.request(self, path.as_ref(), Command::PresignGet { expiry_secs });
         request.presigned()
     }
 
@@ -142,6 +147,12 @@ impl Bucket {
     /// let region = "us-east-1".parse().unwrap();
     /// let credentials = Credentials::default().unwrap();
     /// let bucket = Bucket::new(bucket_name, region, credentials).unwrap();
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
     /// // Add optional custom headers
     /// let mut custom_headers = HeaderMap::new();
@@ -150,17 +161,18 @@ impl Bucket {
     ///    "custom_value".parse().unwrap(),
     /// );
     ///
-    /// let url = bucket.presign_put("/test.file", 86400, Some(custom_headers)).unwrap();
+    /// let url = bucket.presign_put(&client, "/test.file", 86400, Some(custom_headers)).unwrap();
     /// println!("Presigned url: {}", url);
     /// ```
-    pub fn presign_put<S: AsRef<str>>(
+    pub fn presign_put<C: for<'a> Client<'a>, S: AsRef<str>>(
         &self,
+        client: &C,
         path: S,
         expiry_secs: u32,
         custom_headers: Option<HeaderMap>,
     ) -> Result<String> {
         validate_expiry(expiry_secs)?;
-        let request = RequestImpl::new(
+        let request = client.request(
             self,
             path.as_ref(),
             Command::PresignPut {
@@ -183,13 +195,24 @@ impl Bucket {
     /// let region = "us-east-1".parse().unwrap();
     /// let credentials = Credentials::default().unwrap();
     /// let bucket = Bucket::new(bucket_name, region, credentials).unwrap();
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
-    /// let url = bucket.presign_delete("/test.file", 86400).unwrap();
+    /// let url = bucket.presign_delete(&client, "/test.file", 86400).unwrap();
     /// println!("Presigned url: {}", url);
     /// ```
-    pub fn presign_delete<S: AsRef<str>>(&self, path: S, expiry_secs: u32) -> Result<String> {
+    pub fn presign_delete<C: for<'a> Client<'a>, S: AsRef<str>>(
+        &self,
+        client: &C,
+        path: S,
+        expiry_secs: u32,
+    ) -> Result<String> {
         validate_expiry(expiry_secs)?;
-        let request = RequestImpl::new(self, path.as_ref(), Command::PresignDelete { expiry_secs });
+        let request = client.request(self, path.as_ref(), Command::PresignDelete { expiry_secs });
         request.presigned()
     }
 
@@ -207,13 +230,20 @@ impl Bucket {
     /// let region = "us-east-1".parse()?;
     /// let credentials = Credentials::default()?;
     /// let config = BucketConfiguration::default();
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
     /// // Async variant with `tokio` or `async-std` features
-    /// let create_bucket_response = Bucket::create(bucket_name, region, credentials, config).await?;
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// let create_bucket_response = Bucket::create(&client, bucket_name, region, credentials, config).await?;
     ///
     /// // `sync` fature will produce an identical method
-    /// #[cfg(feature = "sync")]
-    /// let create_bucket_response = Bucket::create(bucket_name, region, credentials, config)?;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let create_bucket_response = Bucket::create(&client, bucket_name, region, credentials, config)?;
     ///
     /// # let region: Region = "us-east-1".parse()?;
     /// # let credentials = Credentials::default()?;
@@ -221,12 +251,13 @@ impl Bucket {
     /// // Blocking variant, generated with `blocking` feature in combination
     /// // with `tokio` or `async-std` features.
     /// #[cfg(feature = "blocking")]
-    /// let create_bucket_response = Bucket::create_blocking(bucket_name, region, credentials, config)?;
+    /// let create_bucket_response = Bucket::create_blocking(&client, bucket_name, region, credentials, config)?;
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::maybe_async]
-    pub async fn create(
+    pub async fn create<C: for<'a> Client<'a>>(
+        client: &C,
         name: &str,
         region: Region,
         credentials: Credentials,
@@ -236,9 +267,10 @@ impl Bucket {
         config.set_region(region.clone());
         let command = Command::CreateBucket { config };
         let bucket = Bucket::new(name, region, credentials)?;
-        let request = RequestImpl::new(&bucket, "", command);
+        let request = client.request(&bucket, "", command);
         let (data, response_code) = request.response_data(false).await?;
         let response_text = std::str::from_utf8(&data)?;
+        drop(request);
         Ok(CreateBucketResponse {
             bucket,
             response_text: response_text.to_string(),
@@ -260,13 +292,20 @@ impl Bucket {
     /// let region = "us-east-1".parse()?;
     /// let credentials = Credentials::default()?;
     /// let config = BucketConfiguration::default();
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
     /// // Async variant with `tokio` or `async-std` features
-    /// let create_bucket_response = Bucket::create_with_path_style(bucket_name, region, credentials, config).await?;
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// let create_bucket_response = Bucket::create_with_path_style(&client, bucket_name, region, credentials, config).await?;
     ///
     /// // `sync` fature will produce an identical method
-    /// #[cfg(feature = "sync")]
-    /// let create_bucket_response = Bucket::create_with_path_style(bucket_name, region, credentials, config)?;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let create_bucket_response = Bucket::create_with_path_style(&client, bucket_name, region, credentials, config)?;
     ///
     /// # let region: Region = "us-east-1".parse()?;
     /// # let credentials = Credentials::default()?;
@@ -274,12 +313,13 @@ impl Bucket {
     /// // Blocking variant, generated with `blocking` feature in combination
     /// // with `tokio` or `async-std` features.
     /// #[cfg(feature = "blocking")]
-    /// let create_bucket_response = Bucket::create_with_path_style_blocking(bucket_name, region, credentials, config)?;
+    /// let create_bucket_response = Bucket::create_with_path_style_blocking(&client, bucket_name, region, credentials, config)?;
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::maybe_async]
-    pub async fn create_with_path_style(
+    pub async fn create_with_path_style<C: for<'a> Client<'a>>(
+        client: &C,
         name: &str,
         region: Region,
         credentials: Credentials,
@@ -289,9 +329,10 @@ impl Bucket {
         config.set_region(region.clone());
         let command = Command::CreateBucket { config };
         let bucket = Bucket::new_with_path_style(name, region, credentials)?;
-        let request = RequestImpl::new(&bucket, "", command);
+        let request = client.request(&bucket, "", command);
         let (data, response_code) = request.response_data(false).await?;
         let response_text = std::str::from_utf8(&data)?;
+        drop(request);
         Ok(CreateBucketResponse {
             bucket,
             response_text: response_text.to_string(),
@@ -313,26 +354,33 @@ impl Bucket {
     /// let region = "us-east-1".parse().unwrap();
     /// let credentials = Credentials::default().unwrap();
     /// let bucket = Bucket::new(bucket_name, region, credentials).unwrap();
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
     /// // Async variant with `tokio` or `async-std` features
-    /// bucket.delete().await.unwrap();
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// bucket.delete(&client).await.unwrap();
     /// // `sync` fature will produce an identical method
     ///
-    /// #[cfg(feature = "sync")]
-    /// bucket.delete().unwrap();
+    /// #[cfg(feature = "with-attohttpc")]
+    /// bucket.delete(&client).unwrap();
     /// // Blocking variant, generated with `blocking` feature in combination
     /// // with `tokio` or `async-std` features.
     ///
     /// #[cfg(feature = "blocking")]
-    /// bucket.delete_blocking().unwrap();
+    /// bucket.delete_blocking(&client).unwrap();
     ///
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::maybe_async]
-    pub async fn delete(&self) -> Result<u16> {
+    pub async fn delete<C: for<'a> Client<'a>>(&self, client: &C) -> Result<u16> {
         let command = Command::DeleteBucket;
-        let request = RequestImpl::new(self, "", command);
+        let request = client.request(self, "", command);
         let (_, response_code) = request.response_data(false).await?;
         Ok(response_code)
     }
@@ -456,20 +504,28 @@ impl Bucket {
     /// let region = "us-east-1".parse()?;
     /// let credentials = Credentials::default()?;
     /// let bucket = Bucket::new(bucket_name, region, credentials)?;
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
     /// // Async variant with `tokio` or `async-std` features
-    /// let code = bucket.copy_object_internal("/from.file", "/to.file").await?;
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// let code = bucket.copy_object_internal(&client, "/from.file", "/to.file").await?;
     ///
     /// // `sync` feature will produce an identical method
-    /// #[cfg(feature = "sync")]
-    /// let code = bucket.copy_object_internal("/from.file", "/to.file")?;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let code = bucket.copy_object_internal(&client, "/from.file", "/to.file")?;
     ///
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::maybe_async]
-    pub async fn copy_object_internal<F: AsRef<str>, T: AsRef<str>>(
+    pub async fn copy_object_internal<C: for<'a> Client<'a>, F: AsRef<str>, T: AsRef<str>>(
         &self,
+        client: &C,
         from: F,
         to: T,
     ) -> Result<u16> {
@@ -478,15 +534,20 @@ impl Bucket {
             let from = from.strip_prefix('/').unwrap_or(from);
             format!("{bucket}/{path}", bucket = self.name(), path = from)
         };
-        self.copy_object(fq_from, to).await
+        self.copy_object(client, fq_from, to).await
     }
 
     #[maybe_async::maybe_async]
-    async fn copy_object<F: AsRef<str>, T: AsRef<str>>(&self, from: F, to: T) -> Result<u16> {
+    async fn copy_object<C: for<'a> Client<'a>, F: AsRef<str>, T: AsRef<str>>(
+        &self,
+        client: &C,
+        from: F,
+        to: T,
+    ) -> Result<u16> {
         let command = Command::CopyObject {
             from: from.as_ref(),
         };
-        let request = RequestImpl::new(self, to.as_ref(), command);
+        let request = client.request(self, to.as_ref(), command);
         let (_, code) = request.response_data(false).await?;
         Ok(code)
     }
@@ -507,25 +568,36 @@ impl Bucket {
     /// let region = "us-east-1".parse()?;
     /// let credentials = Credentials::default()?;
     /// let bucket = Bucket::new(bucket_name, region, credentials)?;
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
     /// // Async variant with `tokio` or `async-std` features
-    /// let (data, code) = bucket.get_object("/test.file").await?;
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// let (data, code) = bucket.get_object(&client, "/test.file").await?;
     ///
     /// // `sync` feature will produce an identical method
-    /// #[cfg(feature = "sync")]
-    /// let (data, code) = bucket.get_object("/test.file")?;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let (data, code) = bucket.get_object(&client, "/test.file")?;
     ///
     /// // Blocking variant, generated with `blocking` feature in combination
     /// // with `tokio` or `async-std` features.
     /// #[cfg(feature = "blocking")]
-    /// let (data, code) = bucket.get_object_blocking("/test.file")?;
+    /// let (data, code) = bucket.get_object_blocking(&client, "/test.file")?;
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::maybe_async]
-    pub async fn get_object<S: AsRef<str>>(&self, path: S) -> Result<(Vec<u8>, u16)> {
+    pub async fn get_object<C: for<'a> Client<'a>, S: AsRef<str>>(
+        &self,
+        client: &C,
+        path: S,
+    ) -> Result<(Vec<u8>, u16)> {
         let command = Command::GetObject;
-        let request = RequestImpl::new(self, path.as_ref(), command);
+        let request = client.request(self, path.as_ref(), command);
         request.response_data(false).await
     }
 
@@ -545,25 +617,36 @@ impl Bucket {
     /// let region = "us-east-1".parse()?;
     /// let credentials = Credentials::default()?;
     /// let bucket = Bucket::new(bucket_name, region, credentials)?;
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
     /// // Async variant with `tokio` or `async-std` features
-    /// let (data, code) = bucket.get_object_torrent("/test.file").await?;
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// let (data, code) = bucket.get_object_torrent(&client, "/test.file").await?;
     ///
     /// // `sync` feature will produce an identical method
-    /// #[cfg(feature = "sync")]
-    /// let (data, code) = bucket.get_object_torrent("/test.file")?;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let (data, code) = bucket.get_object_torrent(&client, "/test.file")?;
     ///
     /// // Blocking variant, generated with `blocking` feature in combination
     /// // with `tokio` or `async-std` features.
     /// #[cfg(feature = "blocking")]
-    /// let (data, code) = bucket.get_object_torrent_blocking("/test.file")?;
+    /// let (data, code) = bucket.get_object_torrent_blocking(&client, "/test.file")?;
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::maybe_async]
-    pub async fn get_object_torrent<S: AsRef<str>>(&self, path: S) -> Result<(Vec<u8>, u16)> {
+    pub async fn get_object_torrent<C: for<'a> Client<'a>, S: AsRef<str>>(
+        &self,
+        client: &C,
+        path: S,
+    ) -> Result<(Vec<u8>, u16)> {
         let command = Command::GetObjectTorrent;
-        let request = RequestImpl::new(self, path.as_ref(), command);
+        let request = client.request(self, path.as_ref(), command);
         request.response_data(false).await
     }
 
@@ -583,25 +666,33 @@ impl Bucket {
     /// let region = "us-east-1".parse()?;
     /// let credentials = Credentials::default()?;
     /// let bucket = Bucket::new(bucket_name, region, credentials)?;
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
     /// // Async variant with `tokio` or `async-std` features
-    /// let (data, code) = bucket.get_object_range("/test.file", 0, Some(31)).await?;
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// let (data, code) = bucket.get_object_range(&client, "/test.file", 0, Some(31)).await?;
     ///
     /// // `sync` feature will produce an identical method
-    /// #[cfg(feature = "sync")]
-    /// let (data, code) = bucket.get_object_range("/test.file", 0, Some(31))?;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let (data, code) = bucket.get_object_range(&client, "/test.file", 0, Some(31))?;
     ///
     /// // Blocking variant, generated with `blocking` feature in combination
     /// // with `tokio` or `async-std` features.
     /// #[cfg(feature = "blocking")]
-    /// let (data, code) = bucket.get_object_range_blocking("/test.file", 0, Some(31))?;
+    /// let (data, code) = bucket.get_object_range_blocking(&client, "/test.file", 0, Some(31))?;
     /// #
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::maybe_async]
-    pub async fn get_object_range<S: AsRef<str>>(
+    pub async fn get_object_range<C: for<'a> Client<'a>, S: AsRef<str>>(
         &self,
+        client: &C,
         path: S,
         start: u64,
         end: Option<u64>,
@@ -611,7 +702,7 @@ impl Bucket {
         }
 
         let command = Command::GetObjectRange { start, end };
-        let request = RequestImpl::new(self, path.as_ref(), command);
+        let request = client.request(self, path.as_ref(), command);
         request.response_data(false).await
     }
 
@@ -632,31 +723,43 @@ impl Bucket {
     /// let region = "us-east-1".parse()?;
     /// let credentials = Credentials::default()?;
     /// let bucket = Bucket::new(bucket_name, region, credentials)?;
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     /// let mut output_file = File::create("output_file").expect("Unable to create file");
     ///
     /// // Async variant with `tokio` or `async-std` features
-    /// let status_code = bucket.get_object_stream("/test.file", &mut output_file).await?;
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// let status_code = bucket.get_object_stream(&client, "/test.file", &mut output_file).await?;
     ///
     /// // `sync` feature will produce an identical method
-    /// #[cfg(feature = "sync")]
-    /// let status_code = bucket.get_object_stream("/test.file", &mut output_file)?;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let status_code = bucket.get_object_stream(&client, "/test.file", &mut output_file)?;
     ///
     /// // Blocking variant, generated with `blocking` feature in combination
     /// // with `tokio` or `async-std` features.
     /// #[cfg(feature = "blocking")]
-    /// let status_code = bucket.get_object_stream_blocking("/test.file", &mut output_file)?;
+    /// let status_code = bucket.get_object_stream_blocking(&client, "/test.file", &mut output_file)?;
     /// #
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::maybe_async]
-    pub async fn get_object_stream<T: std::io::Write + Send, S: AsRef<str>>(
+    pub async fn get_object_stream<
+        C: for<'a> Client<'a>,
+        T: std::io::Write + Send,
+        S: AsRef<str>,
+    >(
         &self,
+        client: &C,
         path: S,
         writer: &mut T,
     ) -> Result<u16> {
         let command = Command::GetObject;
-        let request = RequestImpl::new(self, path.as_ref(), command);
+        let request = client.request(self, path.as_ref(), command);
         request.response_data_to_writer(writer).await
     }
 
@@ -682,55 +785,66 @@ impl Bucket {
     /// let test: Vec<u8> = (0..1000).map(|_| 42).collect();
     /// let mut file = File::create(path)?;
     /// file.write_all(&test)?;
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
-    /// #[cfg(feature = "with-tokio")]
+    /// #[cfg(feature = "with-reqwest")]
     /// let mut path = tokio::fs::File::open(path).await?;
     ///
-    /// #[cfg(feature = "with-async-std")]
+    /// #[cfg(feature = "with-surf")]
     /// let mut path = async_std::fs::File::open(path).await?;
     /// // Async variant with `tokio` or `async-std` features
     /// // Generic over futures::io::AsyncRead|tokio::io::AsyncRead + Unpin
-    /// let status_code = bucket.put_object_stream(&mut path, "/path").await?;
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// let status_code = bucket.put_object_stream(&client, &mut path, "/path").await?;
     ///
     /// // `sync` feature will produce an identical method
-    /// #[cfg(feature = "sync")]
+    /// #[cfg(feature = "with-attohttpc")]
     /// // Generic over std::io::Read
-    /// let status_code = bucket.put_object_stream(&mut path, "/path")?;
+    /// let status_code = bucket.put_object_stream(&client, &mut path, "/path")?;
     ///
     /// // Blocking variant, generated with `blocking` feature in combination
     /// // with `tokio` or `async-std` features.
     /// #[cfg(feature = "blocking")]
-    /// let status_code = bucket.put_object_stream_blocking(&mut path, "/path")?;
+    /// let status_code = bucket.put_object_stream_blocking(&client, &mut path, "/path")?;
     /// #
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::async_impl]
-    pub async fn put_object_stream<R: AsyncRead + Unpin>(
+    pub async fn put_object_stream<C: for<'a> Client<'a>, R: AsyncRead + Unpin>(
         &self,
+        client: &C,
         reader: &mut R,
         s3_path: impl AsRef<str>,
     ) -> Result<u16> {
-        self._put_object_stream(reader, s3_path.as_ref()).await
+        self._put_object_stream(client, reader, s3_path.as_ref())
+            .await
     }
 
     #[maybe_async::sync_impl]
-    pub fn put_object_stream<R: Read>(
+    pub fn put_object_stream<C: for<'a> Client<'a>, R: Read>(
         &self,
+        client: &C,
         reader: &mut R,
         s3_path: impl AsRef<str>,
     ) -> Result<u16> {
-        self._put_object_stream(reader, s3_path.as_ref())
+        self._put_object_stream(client, reader, s3_path.as_ref())
     }
 
     #[maybe_async::async_impl]
-    async fn _put_object_stream<R: AsyncRead + Unpin>(
+    async fn _put_object_stream<C: for<'a> Client<'a>, R: AsyncRead + Unpin>(
         &self,
+        client: &C,
         reader: &mut R,
         s3_path: &str,
     ) -> Result<u16> {
         let command = Command::InitiateMultipartUpload;
-        let request = RequestImpl::new(self, s3_path, command);
+        let request = client.request(self, s3_path, command);
         let (data, code) = request.response_data(false).await?;
         let msg: InitiateMultipartUploadResponse =
             serde_xml::from_str(std::str::from_utf8(data.as_slice())?)?;
@@ -745,9 +859,9 @@ impl Bucket {
             if chunk.len() < CHUNK_SIZE {
                 if part_number == 0 {
                     // Files is not big enough for multipart upload, going with regular put_object
-                    self.abort_upload(&path, upload_id).await?;
+                    self.abort_upload(client, &path, upload_id).await?;
 
-                    self.put_object(s3_path, chunk.as_slice()).await?;
+                    self.put_object(client, s3_path, chunk.as_slice()).await?;
                 } else {
                     part_number += 1;
                     let command = Command::PutObject {
@@ -756,7 +870,7 @@ impl Bucket {
                         content_type: "application/octet-stream",
                         multipart: Some(Multipart::new(part_number, upload_id)), // upload_id: &msg.upload_id,
                     };
-                    let request = RequestImpl::new(self, &path, command);
+                    let request = client.request(self, &path, command);
                     let (data, _code) = request.response_data(true).await?;
                     let etag = std::str::from_utf8(data.as_slice())?;
                     etags.push(etag.to_string());
@@ -774,7 +888,7 @@ impl Bucket {
                         upload_id: &msg.upload_id,
                         data,
                     };
-                    let complete_request = RequestImpl::new(self, &path, complete);
+                    let complete_request = client.request(self, &path, complete);
                     let (_data, _code) = complete_request.response_data(false).await?;
                     // let response = std::str::from_utf8(data.as_slice())?;
                 }
@@ -787,7 +901,7 @@ impl Bucket {
                     content_type: "application/octet-stream",
                     multipart: Some(Multipart::new(part_number, upload_id)), // upload_id: &msg.upload_id,
                 };
-                let request = RequestImpl::new(self, &path, command);
+                let request = client.request(self, &path, command);
                 let (data, _code) = request.response_data(true).await?;
                 let etag = std::str::from_utf8(data.as_slice())?;
                 etags.push(etag.to_string());
@@ -797,9 +911,14 @@ impl Bucket {
     }
 
     #[maybe_async::sync_impl]
-    fn _put_object_stream<R: Read>(&self, reader: &mut R, s3_path: &str) -> Result<u16> {
+    fn _put_object_stream<C: for<'a> Client<'a>, R: Read>(
+        &self,
+        client: &C,
+        reader: &mut R,
+        s3_path: &str,
+    ) -> Result<u16> {
         let command = Command::InitiateMultipartUpload;
-        let request = RequestImpl::new(self, s3_path, command);
+        let request = client.request(self, s3_path, command);
         let (data, code) = request.response_data(false)?;
         let msg: InitiateMultipartUploadResponse =
             serde_xml::from_str(std::str::from_utf8(data.as_slice())?)?;
@@ -815,9 +934,9 @@ impl Bucket {
             if chunk.len() < CHUNK_SIZE {
                 if part_number == 0 {
                     // Files is not big enough for multipart upload, going with regular put_object
-                    self.abort_upload(&path, upload_id)?;
+                    self.abort_upload(client, &path, upload_id)?;
 
-                    self.put_object(s3_path, chunk.as_slice())?;
+                    self.put_object(client, s3_path, chunk.as_slice())?;
                 } else {
                     part_number += 1;
                     let command = Command::PutObject {
@@ -826,7 +945,7 @@ impl Bucket {
                         content_type: "application/octet-stream",
                         multipart: Some(Multipart::new(part_number, upload_id)), // upload_id: &msg.upload_id,
                     };
-                    let request = RequestImpl::new(self, &path, command);
+                    let request = client.request(self, &path, command);
                     let (data, _code) = request.response_data(true)?;
                     let etag = std::str::from_utf8(data.as_slice())?;
                     etags.push(etag.to_string());
@@ -843,7 +962,7 @@ impl Bucket {
                         upload_id: &msg.upload_id,
                         data,
                     };
-                    let complete_request = RequestImpl::new(self, &path, complete);
+                    let complete_request = client.request(self, &path, complete);
                     let (_data, _code) = complete_request.response_data(false)?;
                     // let response = std::str::from_utf8(data.as_slice())?;
                 }
@@ -855,7 +974,7 @@ impl Bucket {
                     content_type: "application/octet-stream",
                     multipart: Some(Multipart::new(part_number, upload_id)),
                 };
-                let request = RequestImpl::new(self, &path, command);
+                let request = client.request(self, &path, command);
                 let (data, _code) = request.response_data(true)?;
                 let etag = std::str::from_utf8(data.as_slice())?;
                 etags.push(etag.to_string());
@@ -880,25 +999,32 @@ impl Bucket {
     /// let region = "us-east-1".parse()?;
     /// let credentials = Credentials::default()?;
     /// let bucket = Bucket::new(bucket_name, region, credentials)?;
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
     /// // Async variant with `tokio` or `async-std` features
-    /// let (region, status_code) = bucket.location().await?;
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// let (region, status_code) = bucket.location(&client).await?;
     ///
     /// // `sync` feature will produce an identical method
-    /// #[cfg(feature = "sync")]
-    /// let (region, status_code) = bucket.location()?;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let (region, status_code) = bucket.location(&client)?;
     ///
     /// // Blocking variant, generated with `blocking` feature in combination
     /// // with `tokio` or `async-std` features.
     /// #[cfg(feature = "blocking")]
-    /// let (region, status_code) = bucket.location_blocking()?;
+    /// let (region, status_code) = bucket.location_blocking(&client)?;
     /// #
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::maybe_async]
-    pub async fn location(&self) -> Result<(Region, u16)> {
-        let request = RequestImpl::new(self, "?location", Command::GetBucketLocation);
+    pub async fn location<C: for<'a> Client<'a>>(&self, client: &C) -> Result<(Region, u16)> {
+        let request = client.request(self, "?location", Command::GetBucketLocation);
         let result = request.response_data(false).await?;
         let region_string = String::from_utf8_lossy(&result.0);
         let region = match serde_xml::from_reader(region_string.as_bytes()) {
@@ -934,6 +1060,12 @@ impl Bucket {
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<()> {
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
     /// let bucket_name = "rust-s3-test";
     /// let region = "us-east-1".parse()?;
@@ -941,24 +1073,29 @@ impl Bucket {
     /// let bucket = Bucket::new(bucket_name, region, credentials)?;
     ///
     /// // Async variant with `tokio` or `async-std` features
-    /// let (_, code) = bucket.delete_object("/test.file").await?;
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// let (_, code) = bucket.delete_object(&client, "/test.file").await?;
     ///
     /// // `sync` feature will produce an identical method
-    /// #[cfg(feature = "sync")]
-    /// let (_, code) = bucket.delete_object("/test.file")?;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let (_, code) = bucket.delete_object(&client, "/test.file")?;
     ///
     /// // Blocking variant, generated with `blocking` feature in combination
     /// // with `tokio` or `async-std` features.
     /// #[cfg(feature = "blocking")]
-    /// let (_, code) = bucket.delete_object_blocking("/test.file")?;
+    /// let (_, code) = bucket.delete_object_blocking(&client, "/test.file")?;
     /// #
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::maybe_async]
-    pub async fn delete_object<S: AsRef<str>>(&self, path: S) -> Result<(Vec<u8>, u16)> {
+    pub async fn delete_object<C: for<'a> Client<'a>, S: AsRef<str>>(
+        &self,
+        client: &C,
+        path: S,
+    ) -> Result<(Vec<u8>, u16)> {
         let command = Command::DeleteObject;
-        let request = RequestImpl::new(self, path.as_ref(), command);
+        let request = client.request(self, path.as_ref(), command);
         request.response_data(false).await
     }
 
@@ -978,28 +1115,42 @@ impl Bucket {
     /// let region = "us-east-1".parse()?;
     /// let credentials = Credentials::default()?;
     /// let bucket = Bucket::new(bucket_name, region, credentials)?;
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
     /// // Async variant with `tokio` or `async-std` features
-    /// let (head_object_result, code) = bucket.head_object("/test.png").await?;
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// let (head_object_result, code) = bucket.head_object(&client, "/test.png").await?;
     ///
     /// // `sync` feature will produce an identical method
-    /// #[cfg(feature = "sync")]
-    /// let (head_object_result, code) = bucket.head_object("/test.png")?;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let (head_object_result, code) = bucket.head_object(&client, "/test.png")?;
     ///
     /// // Blocking variant, generated with `blocking` feature in combination
     /// // with `tokio` or `async-std` features.
     /// #[cfg(feature = "blocking")]
-    /// let (head_object_result, code) = bucket.head_object_blocking("/test.png")?;
+    /// let (head_object_result, code) = bucket.head_object_blocking(&client, "/test.png")?;
     /// #
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::maybe_async]
-    pub async fn head_object<S: AsRef<str>>(&self, path: S) -> Result<(HeadObjectResult, u16)> {
+    pub async fn head_object<C: for<'a> Client<'a>, S: AsRef<str>>(
+        &self,
+        client: &C,
+        path: S,
+    ) -> Result<(HeadObjectResult, u16)>
+    where
+        for<'a> <<C as Client<'a>>::Request as Request>::HeaderMap: Into<HeadObjectResult>,
+    {
         let command = Command::HeadObject;
-        let request = RequestImpl::new(self, path.as_ref(), command);
+        let request = client.request(self, path.as_ref(), command);
         let (headers, status) = request.response_header().await?;
-        let header_object = HeadObjectResult::from(&headers);
+        let header_object: HeadObjectResult = headers.into();
         Ok((header_object, status))
     }
 
@@ -1020,25 +1171,33 @@ impl Bucket {
     /// let credentials = Credentials::default()?;
     /// let bucket = Bucket::new(bucket_name, region, credentials)?;
     /// let content = "I want to go to S3".as_bytes();
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
     /// // Async variant with `tokio` or `async-std` features
-    /// let (_, code) = bucket.put_object_with_content_type("/test.file", content, "text/plain").await?;
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// let (_, code) = bucket.put_object_with_content_type(&client, "/test.file", content, "text/plain").await?;
     ///
     /// // `sync` feature will produce an identical method
-    /// #[cfg(feature = "sync")]
-    /// let (_, code) = bucket.put_object_with_content_type("/test.file", content, "text/plain")?;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let (_, code) = bucket.put_object_with_content_type(&client, "/test.file", content, "text/plain")?;
     ///
     /// // Blocking variant, generated with `blocking` feature in combination
     /// // with `tokio` or `async-std` features.
     /// #[cfg(feature = "blocking")]
-    /// let (_, code) = bucket.put_object_with_content_type_blocking("/test.file", content, "text/plain")?;
+    /// let (_, code) = bucket.put_object_with_content_type_blocking(&client, "/test.file", content, "text/plain")?;
     /// #
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::maybe_async]
-    pub async fn put_object_with_content_type<S: AsRef<str>>(
+    pub async fn put_object_with_content_type<C: for<'a> Client<'a>, S: AsRef<str>>(
         &self,
+        client: &C,
         path: S,
         content: &[u8],
         content_type: &str,
@@ -1048,7 +1207,7 @@ impl Bucket {
             content_type,
             multipart: None,
         };
-        let request = RequestImpl::new(self, path.as_ref(), command);
+        let request = client.request(self, path.as_ref(), command);
         request.response_data(true).await
     }
 
@@ -1069,29 +1228,37 @@ impl Bucket {
     /// let credentials = Credentials::default()?;
     /// let bucket = Bucket::new(bucket_name, region, credentials)?;
     /// let content = "I want to go to S3".as_bytes();
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
     /// // Async variant with `tokio` or `async-std` features
-    /// let (_, code) = bucket.put_object("/test.file", content).await?;
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// let (_, code) = bucket.put_object(&client, "/test.file", content).await?;
     ///
     /// // `sync` feature will produce an identical method
-    /// #[cfg(feature = "sync")]
-    /// let (_, code) = bucket.put_object("/test.file", content)?;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let (_, code) = bucket.put_object(&client, "/test.file", content)?;
     ///
     /// // Blocking variant, generated with `blocking` feature in combination
     /// // with `tokio` or `async-std` features.
     /// #[cfg(feature = "blocking")]
-    /// let (_, code) = bucket.put_object_blocking("/test.file", content)?;
+    /// let (_, code) = bucket.put_object_blocking(&client, "/test.file", content)?;
     /// #
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::maybe_async]
-    pub async fn put_object<S: AsRef<str>>(
+    pub async fn put_object<C: for<'a> Client<'a>, S: AsRef<str>>(
         &self,
+        client: &C,
         path: S,
         content: &[u8],
     ) -> Result<(Vec<u8>, u16)> {
-        self.put_object_with_content_type(path, content, "application/octet-stream")
+        self.put_object_with_content_type(client, path, content, "application/octet-stream")
             .await
     }
 
@@ -1132,31 +1299,39 @@ impl Bucket {
     /// let region = "us-east-1".parse()?;
     /// let credentials = Credentials::default()?;
     /// let bucket = Bucket::new(bucket_name, region, credentials)?;
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
     /// // Async variant with `tokio` or `async-std` features
-    /// let (_, code) = bucket.put_object_tagging("/test.file", &[("Tag1", "Value1"), ("Tag2", "Value2")]).await?;
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// let (_, code) = bucket.put_object_tagging(&client, "/test.file", &[("Tag1", "Value1"), ("Tag2", "Value2")]).await?;
     ///
     /// // `sync` feature will produce an identical method
-    /// #[cfg(feature = "sync")]
-    /// let (_, code) = bucket.put_object_tagging("/test.file", &[("Tag1", "Value1"), ("Tag2", "Value2")])?;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let (_, code) = bucket.put_object_tagging(&client, "/test.file", &[("Tag1", "Value1"), ("Tag2", "Value2")])?;
     ///
     /// // Blocking variant, generated with `blocking` feature in combination
     /// // with `tokio` or `async-std` features.
     /// #[cfg(feature = "blocking")]
-    /// let (_, code) = bucket.put_object_tagging_blocking("/test.file", &[("Tag1", "Value1"), ("Tag2", "Value2")])?;
+    /// let (_, code) = bucket.put_object_tagging_blocking(&client, "/test.file", &[("Tag1", "Value1"), ("Tag2", "Value2")])?;
     /// #
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::maybe_async]
-    pub async fn put_object_tagging<S: AsRef<str>>(
+    pub async fn put_object_tagging<C: for<'a> Client<'a>, S: AsRef<str>>(
         &self,
+        client: &C,
         path: &str,
         tags: &[(S, S)],
     ) -> Result<(Vec<u8>, u16)> {
         let content = self._tags_xml(tags);
         let command = Command::PutObjectTagging { tags: &content };
-        let request = RequestImpl::new(self, path, command);
+        let request = client.request(self, path, command);
         request.response_data(false).await
     }
 
@@ -1176,26 +1351,37 @@ impl Bucket {
     /// let region = "us-east-1".parse()?;
     /// let credentials = Credentials::default()?;
     /// let bucket = Bucket::new(bucket_name, region, credentials)?;
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
     /// // Async variant with `tokio` or `async-std` features
-    /// let (_, code) = bucket.delete_object_tagging("/test.file").await?;
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// let (_, code) = bucket.delete_object_tagging(&client, "/test.file").await?;
     ///
     /// // `sync` feature will produce an identical method
-    /// #[cfg(feature = "sync")]
-    /// let (_, code) = bucket.delete_object_tagging("/test.file")?;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let (_, code) = bucket.delete_object_tagging(&client, "/test.file")?;
     ///
     /// // Blocking variant, generated with `blocking` feature in combination
     /// // with `tokio` or `async-std` features.
     /// #[cfg(feature = "blocking")]
-    /// let (_, code) = bucket.delete_object_tagging_blocking("/test.file")?;
+    /// let (_, code) = bucket.delete_object_tagging_blocking(&client, "/test.file")?;
     /// #
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::maybe_async]
-    pub async fn delete_object_tagging<S: AsRef<str>>(&self, path: S) -> Result<(Vec<u8>, u16)> {
+    pub async fn delete_object_tagging<C: for<'a> Client<'a>, S: AsRef<str>>(
+        &self,
+        client: &C,
+        path: S,
+    ) -> Result<(Vec<u8>, u16)> {
         let command = Command::DeleteObjectTagging;
-        let request = RequestImpl::new(self, path.as_ref(), command);
+        let request = client.request(self, path.as_ref(), command);
         request.response_data(false).await
     }
 
@@ -1215,26 +1401,37 @@ impl Bucket {
     /// let region = "us-east-1".parse()?;
     /// let credentials = Credentials::default()?;
     /// let bucket = Bucket::new(bucket_name, region, credentials)?;
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
     /// // Async variant with `tokio` or `async-std` features
-    /// let (_, code) = bucket.get_object_tagging("/test.file").await?;
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// let (_, code) = bucket.get_object_tagging(&client, "/test.file").await?;
     ///
     /// // `sync` feature will produce an identical method
-    /// #[cfg(feature = "sync")]
-    /// let (_, code) = bucket.get_object_tagging("/test.file")?;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let (_, code) = bucket.get_object_tagging(&client, "/test.file")?;
     ///
     /// // Blocking variant, generated with `blocking` feature in combination
     /// // with `tokio` or `async-std` features.
     /// #[cfg(feature = "blocking")]
-    /// let (_, code) = bucket.get_object_tagging_blocking("/test.file")?;
+    /// let (_, code) = bucket.get_object_tagging_blocking(&client, "/test.file")?;
     /// #
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::maybe_async]
-    pub async fn get_object_tagging<S: AsRef<str>>(&self, path: S) -> Result<(Vec<Tag>, u16)> {
+    pub async fn get_object_tagging<C: for<'a> Client<'a>, S: AsRef<str>>(
+        &self,
+        client: &C,
+        path: S,
+    ) -> Result<(Vec<Tag>, u16)> {
         let command = Command::GetObjectTagging {};
-        let request = RequestImpl::new(self, path.as_ref(), command);
+        let request = client.request(self, path.as_ref(), command);
         let result = request.response_data(false).await?;
 
         let mut tags = Vec::new();
@@ -1269,8 +1466,9 @@ impl Bucket {
     }
 
     #[maybe_async::maybe_async]
-    pub async fn list_page(
+    pub async fn list_page<C: for<'a> Client<'a>>(
         &self,
+        client: &C,
         prefix: String,
         delimiter: Option<String>,
         continuation_token: Option<String>,
@@ -1284,7 +1482,7 @@ impl Bucket {
             start_after,
             max_keys,
         };
-        let request = RequestImpl::new(self, "/", command);
+        let request = client.request(self, "/", command);
         let (response, status_code) = request.response_data(false).await?;
         return serde_xml::from_reader(response.as_slice())
             .map(|list_bucket_result| (list_bucket_result, status_code))
@@ -1307,25 +1505,33 @@ impl Bucket {
     /// let region = "us-east-1".parse()?;
     /// let credentials = Credentials::default()?;
     /// let bucket = Bucket::new(bucket_name, region, credentials)?;
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
     /// // Async variant with `tokio` or `async-std` features
-    /// let results = bucket.list("/".to_string(), Some("/".to_string())).await?;
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// let results = bucket.list(&client, "/".to_string(), Some("/".to_string())).await?;
     ///
     /// // `sync` feature will produce an identical method
-    /// #[cfg(feature = "sync")]
-    /// let results = bucket.list("/".to_string(), Some("/".to_string()))?;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let results = bucket.list(&client, "/".to_string(), Some("/".to_string()))?;
     ///
     /// // Blocking variant, generated with `blocking` feature in combination
     /// // with `tokio` or `async-std` features.
     /// #[cfg(feature = "blocking")]
-    /// let results = bucket.list_blocking("/".to_string(), Some("/".to_string()))?;
+    /// let results = bucket.list_blocking(&client, "/".to_string(), Some("/".to_string()))?;
     /// #
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::maybe_async]
-    pub async fn list(
+    pub async fn list<C: for<'a> Client<'a>>(
         &self,
+        client: &C,
         prefix: String,
         delimiter: Option<String>,
     ) -> Result<Vec<ListBucketResult>> {
@@ -1336,6 +1542,7 @@ impl Bucket {
         loop {
             let (list_bucket_result, _) = the_bucket
                 .list_page(
+                    client,
                     prefix.clone(),
                     delimiter.clone(),
                     continuation_token,
@@ -1354,8 +1561,9 @@ impl Bucket {
     }
 
     #[maybe_async::maybe_async]
-    pub async fn list_multiparts_uploads_page(
+    pub async fn list_multiparts_uploads_page<C: for<'a> Client<'a>>(
         &self,
+        client: &C,
         prefix: Option<&str>,
         delimiter: Option<&str>,
         key_marker: Option<String>,
@@ -1367,7 +1575,7 @@ impl Bucket {
             key_marker,
             max_uploads,
         };
-        let request = RequestImpl::new(self, "/", command);
+        let request = client.request(self, "/", command);
         let (response, status_code) = request.response_data(false).await?;
         return serde_xml::from_reader(response.as_slice())
             .map(|list_bucket_result| (list_bucket_result, status_code))
@@ -1391,25 +1599,33 @@ impl Bucket {
     /// let region = "us-east-1".parse()?;
     /// let credentials = Credentials::default()?;
     /// let bucket = Bucket::new(bucket_name, region, credentials)?;
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
     /// // Async variant with `tokio` or `async-std` features
-    /// let results = bucket.list_multiparts_uploads(Some("/"), Some("/")).await?;
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// let results = bucket.list_multiparts_uploads(&client, Some("/"), Some("/")).await?;
     ///
     /// // `sync` feature will produce an identical method
-    /// #[cfg(feature = "sync")]
-    /// let results = bucket.list_multiparts_uploads(Some("/"), Some("/"))?;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let results = bucket.list_multiparts_uploads(&client, Some("/"), Some("/"))?;
     ///
     /// // Blocking variant, generated with `blocking` feature in combination
     /// // with `tokio` or `async-std` features.
     /// #[cfg(feature = "blocking")]
-    /// let results = bucket.list_multiparts_uploads_blocking(Some("/"), Some("/"))?;
+    /// let results = bucket.list_multiparts_uploads_blocking(&client, Some("/"), Some("/"))?;
     /// #
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::maybe_async]
-    pub async fn list_multiparts_uploads(
+    pub async fn list_multiparts_uploads<C: for<'a> Client<'a>>(
         &self,
+        client: &C,
         prefix: Option<&str>,
         delimiter: Option<&str>,
     ) -> Result<Vec<ListMultipartUploadsResult>> {
@@ -1419,7 +1635,7 @@ impl Bucket {
 
         loop {
             let (list_multiparts_uploads_result, _) = the_bucket
-                .list_multiparts_uploads_page(prefix, delimiter, next_marker, None)
+                .list_multiparts_uploads_page(client, prefix, delimiter, next_marker, None)
                 .await?;
 
             let is_truncated = list_multiparts_uploads_result.is_truncated;
@@ -1450,26 +1666,38 @@ impl Bucket {
     /// let region = "us-east-1".parse()?;
     /// let credentials = Credentials::default()?;
     /// let bucket = Bucket::new(bucket_name, region, credentials)?;
+    /// #[cfg(feature = "with-reqwest")]
+    /// let client = reqwest::Client::new();
+    /// #[cfg(feature = "with-surf")]
+    /// let client = surf::Client::new();;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let client = s3::client::AttoHttpClient;
     ///
     /// // Async variant with `tokio` or `async-std` features
-    /// let results = bucket.abort_upload("/some/file.txt", "ZDFjM2I0YmEtMzU3ZC00OTQ1LTlkNGUtMTgxZThjYzIwNjA2").await?;
+    /// #[cfg(any(feature = "with-reqwest", feature = "with-surf"))]
+    /// let results = bucket.abort_upload(&client, "/some/file.txt", "ZDFjM2I0YmEtMzU3ZC00OTQ1LTlkNGUtMTgxZThjYzIwNjA2").await?;
     ///
     /// // `sync` feature will produce an identical method
-    /// #[cfg(feature = "sync")]
-    /// let results = bucket.abort_upload("/some/file.txt", "ZDFjM2I0YmEtMzU3ZC00OTQ1LTlkNGUtMTgxZThjYzIwNjA2")?;
+    /// #[cfg(feature = "with-attohttpc")]
+    /// let results = bucket.abort_upload(&client, "/some/file.txt", "ZDFjM2I0YmEtMzU3ZC00OTQ1LTlkNGUtMTgxZThjYzIwNjA2")?;
     ///
     /// // Blocking variant, generated with `blocking` feature in combination
     /// // with `tokio` or `async-std` features.
     /// #[cfg(feature = "blocking")]
-    /// let results = bucket.abort_upload_blocking("/some/file.txt", "ZDFjM2I0YmEtMzU3ZC00OTQ1LTlkNGUtMTgxZThjYzIwNjA2")?;
+    /// let results = bucket.abort_upload_blocking(&client, "/some/file.txt", "ZDFjM2I0YmEtMzU3ZC00OTQ1LTlkNGUtMTgxZThjYzIwNjA2")?;
     /// #
     /// # Ok(())
     /// # }
     /// ```
     #[maybe_async::maybe_async]
-    pub async fn abort_upload(&self, key: &str, upload_id: &str) -> Result<()> {
+    pub async fn abort_upload<C: for<'a> Client<'a>>(
+        &self,
+        client: &C,
+        key: &str,
+        upload_id: &str,
+    ) -> Result<()> {
         let abort = Command::AbortMultipartUpload { upload_id };
-        let abort_request = RequestImpl::new(self, key, abort);
+        let abort_request = client.request(self, key, abort);
         let (content, code) = abort_request.response_data(false).await?;
 
         if (200..300).contains(&code) {
@@ -1657,9 +1885,11 @@ impl Bucket {
 
 #[cfg(test)]
 mod test {
-
+    use crate::client::Client;
     use crate::creds::Credentials;
     use crate::region::Region;
+    use crate::request_trait::Request;
+    use crate::serde_types::HeadObjectResult;
     use crate::Bucket;
     use crate::BucketConfiguration;
     use crate::Tag;
@@ -1670,6 +1900,21 @@ mod test {
     use std::fs::File;
     use std::io::prelude::*;
     // use log::info;
+
+    #[cfg(feature = "with-reqwest")]
+    fn make_client() -> reqwest::Client {
+        reqwest::Client::new()
+    }
+
+    #[cfg(feature = "with-surf")]
+    fn make_client() -> surf::Client {
+        surf::Client::new()
+    }
+
+    #[cfg(feature = "with-attohttpc")]
+    fn make_client() -> crate::client::AttoHttpClient {
+        crate::client::AttoHttpClient
+    }
 
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -1774,34 +2019,37 @@ mod test {
     }
 
     #[maybe_async::maybe_async]
-    async fn put_head_get_delete_object(bucket: Bucket) {
+    async fn put_head_get_delete_object<C: for<'a> Client<'a>>(client: &C, bucket: Bucket)
+    where
+        for<'a> <<C as Client<'a>>::Request as Request>::HeaderMap: Into<HeadObjectResult>,
+    {
         let s3_path = "/+test.file";
         let test: Vec<u8> = object(3072);
 
-        let (_data, code) = bucket.put_object(s3_path, &test).await.unwrap();
+        let (_data, code) = bucket.put_object(client, s3_path, &test).await.unwrap();
         // println!("{}", std::str::from_utf8(&data).unwrap());
         assert_eq!(code, 200);
-        let (data, code) = bucket.get_object(s3_path).await.unwrap();
+        let (data, code) = bucket.get_object(client, s3_path).await.unwrap();
         assert_eq!(code, 200);
         // println!("{}", std::str::from_utf8(&data).unwrap());
         assert_eq!(test, data);
 
         let (data, code) = bucket
-            .get_object_range(s3_path, 100, Some(1000))
+            .get_object_range(client, s3_path, 100, Some(1000))
             .await
             .unwrap();
         assert_eq!(code, 206);
         // println!("{}", std::str::from_utf8(&data).unwrap());
         assert_eq!(test[100..1001].to_vec(), data);
 
-        let (head_object_result, code) = bucket.head_object(s3_path).await.unwrap();
+        let (head_object_result, code) = bucket.head_object(client, s3_path).await.unwrap();
         assert_eq!(code, 200);
         assert_eq!(
             head_object_result.content_type.unwrap(),
             "application/octet-stream".to_owned()
         );
         // println!("{:?}", head_object_result);
-        let (_, code) = bucket.delete_object(s3_path).await.unwrap();
+        let (_, code) = bucket.delete_object(client, s3_path).await.unwrap();
         assert_eq!(code, 204);
     }
 
@@ -1815,6 +2063,7 @@ mod test {
         )
     )]
     async fn test_tagging_aws() {
+        let client = make_client();
         let bucket = test_aws_bucket();
         let _target_tags = vec![
             Tag {
@@ -1828,21 +2077,31 @@ mod test {
         ];
         let empty_tags: Vec<Tag> = Vec::new();
         let (_data, code) = bucket
-            .put_object("tagging_test", b"Gimme tags")
+            .put_object(&client, "tagging_test", b"Gimme tags")
             .await
             .unwrap();
         assert_eq!(code, 200);
-        let (tags, _code) = bucket.get_object_tagging("tagging_test").await.unwrap();
+        let (tags, _code) = bucket
+            .get_object_tagging(&client, "tagging_test")
+            .await
+            .unwrap();
         assert_eq!(tags, empty_tags);
         let (_body, code) = bucket
-            .put_object_tagging("tagging_test", &[("Tag1", "Value1"), ("Tag2", "Value2")])
+            .put_object_tagging(
+                &client,
+                "tagging_test",
+                &[("Tag1", "Value1"), ("Tag2", "Value2")],
+            )
             .await
             .unwrap();
         assert_eq!(code, 200);
         // This could be eventually consistent now
-        let (_tags, _code) = bucket.get_object_tagging("tagging_test").await.unwrap();
+        let (_tags, _code) = bucket
+            .get_object_tagging(&client, "tagging_test")
+            .await
+            .unwrap();
         // assert_eq!(tags, target_tags)
-        let (_data, _code) = bucket.delete_object("tagging_test").await.unwrap();
+        let (_data, _code) = bucket.delete_object(&client, "tagging_test").await.unwrap();
     }
 
     #[ignore]
@@ -1856,6 +2115,7 @@ mod test {
     )]
     async fn streaming_test_put_get_delete_big_object() {
         init();
+        let client = make_client();
         let remote_path = "+stream_test_big";
         let local_path = "+stream_test_big";
         std::fs::remove_file(remote_path).unwrap_or_else(|_| {});
@@ -1875,18 +2135,21 @@ mod test {
         }
 
         let code = bucket
-            .put_object_stream(&mut reader, remote_path)
+            .put_object_stream(&client, &mut reader, remote_path)
             .await
             .unwrap();
         assert_eq!(code, 200);
         let mut writer = Vec::new();
         let code = bucket
-            .get_object_stream(local_path, &mut writer)
+            .get_object_stream(&client, local_path, &mut writer)
             .await
             .unwrap();
         assert_eq!(code, 200);
         assert_eq!(test, writer);
-        let (_body, _code) = bucket.get_object_torrent(remote_path).await.unwrap();
+        let (_body, _code) = bucket
+            .get_object_torrent(&client, remote_path)
+            .await
+            .unwrap();
         // let dummy: Vec<u8> = Vec::new();
         // Getting a 405 here for some reason
         // assert_eq!(code, 200);
@@ -1953,39 +2216,41 @@ mod test {
         //         116, 114, 101, 97, 109, 95, 116, 101, 115, 116, 95, 98, 105, 103, 101, 101
         //     ]
         // );
-        let (_, code) = bucket.delete_object(local_path).await.unwrap();
+        let (_, code) = bucket.delete_object(&client, local_path).await.unwrap();
         assert_eq!(code, 204);
         std::fs::remove_file(local_path).unwrap_or_else(|_| {});
     }
 
     #[cfg(feature = "blocking")]
     fn put_head_get_delete_object_blocking(bucket: Bucket) {
+        let client = make_client();
+
         let s3_path = "/test_blocking.file";
         let test: Vec<u8> = object(3072);
 
-        let (_data, code) = bucket.put_object_blocking(s3_path, &test).unwrap();
+        let (_data, code) = bucket.put_object_blocking(&client, s3_path, &test).unwrap();
         // println!("{}", std::str::from_utf8(&data).unwrap());
         assert_eq!(code, 200);
-        let (data, code) = bucket.get_object_blocking(s3_path).unwrap();
+        let (data, code) = bucket.get_object_blocking(&client, s3_path).unwrap();
         assert_eq!(code, 200);
         // println!("{}", std::str::from_utf8(&data).unwrap());
         assert_eq!(test, data);
 
         let (data, code) = bucket
-            .get_object_range_blocking(s3_path, 100, Some(1000))
+            .get_object_range_blocking(&client, s3_path, 100, Some(1000))
             .unwrap();
         assert_eq!(code, 206);
         // println!("{}", std::str::from_utf8(&data).unwrap());
         assert_eq!(test[100..1001].to_vec(), data);
 
-        let (head_object_result, code) = bucket.head_object_blocking(s3_path).unwrap();
+        let (head_object_result, code) = bucket.head_object_blocking(&client, s3_path).unwrap();
         assert_eq!(code, 200);
         assert_eq!(
             head_object_result.content_type.unwrap(),
             "application/octet-stream".to_owned()
         );
         // println!("{:?}", head_object_result);
-        let (_, code) = bucket.delete_object_blocking(s3_path).unwrap();
+        let (_, code) = bucket.delete_object_blocking(&client, s3_path).unwrap();
         assert_eq!(code, 204);
     }
 
@@ -2026,7 +2291,9 @@ mod test {
     ))]
     #[test]
     fn minio_put_head_get_delete_object_blocking() {
+        let client = make_client();
         Bucket::create_with_path_style_blocking(
+            &client,
             "rust-s3",
             Region::Custom {
                 region: "eu-central-1".to_owned(),
@@ -2059,7 +2326,8 @@ mod test {
         )
     )]
     async fn aws_put_head_get_delete_object() {
-        put_head_get_delete_object(test_aws_bucket()).await;
+        let client = make_client();
+        put_head_get_delete_object(&client, test_aws_bucket()).await;
     }
 
     #[ignore]
@@ -2078,7 +2346,8 @@ mod test {
         )
     )]
     async fn gc_test_put_head_get_delete_object() {
-        put_head_get_delete_object(test_gc_bucket()).await;
+        let client = make_client();
+        put_head_get_delete_object(&client, test_gc_bucket()).await;
     }
 
     #[ignore]
@@ -2091,7 +2360,8 @@ mod test {
         )
     )]
     async fn wasabi_test_put_head_get_delete_object() {
-        put_head_get_delete_object(test_wasabi_bucket()).await;
+        let client = make_client();
+        put_head_get_delete_object(&client, test_wasabi_bucket()).await;
     }
 
     #[ignore]
@@ -2104,7 +2374,10 @@ mod test {
         )
     )]
     async fn minio_test_put_head_get_delete_object() {
+        let client = make_client();
+
         Bucket::create_with_path_style(
+            &client,
             "rust-s3",
             Region::Custom {
                 region: "eu-central-1".to_owned(),
@@ -2115,7 +2388,7 @@ mod test {
         )
         .await
         .unwrap();
-        put_head_get_delete_object(test_minio_bucket()).await;
+        put_head_get_delete_object(&client, test_minio_bucket()).await;
     }
 
     #[ignore]
@@ -2128,7 +2401,8 @@ mod test {
         )
     )]
     async fn digital_ocean_test_put_head_get_delete_object() {
-        put_head_get_delete_object(test_digital_ocean_bucket()).await;
+        let client = make_client();
+        put_head_get_delete_object(&client, test_digital_ocean_bucket()).await;
     }
 
     #[test]
@@ -2136,6 +2410,7 @@ mod test {
     fn test_presign_put() {
         let s3_path = "/test/test.file";
         let bucket = test_aws_bucket();
+        let client = make_client();
 
         let mut custom_headers = HeaderMap::new();
         custom_headers.insert(
@@ -2144,7 +2419,7 @@ mod test {
         );
 
         let url = bucket
-            .presign_put(s3_path, 86400, Some(custom_headers))
+            .presign_put(&client, s3_path, 86400, Some(custom_headers))
             .unwrap();
 
         // assert_eq!(url, "");
@@ -2158,8 +2433,9 @@ mod test {
     fn test_presign_get() {
         let s3_path = "/test/test.file";
         let bucket = test_aws_bucket();
+        let client = make_client();
 
-        let url = bucket.presign_get(s3_path, 86400).unwrap();
+        let url = bucket.presign_get(&client, s3_path, 86400).unwrap();
         assert!(url.contains("/test%2Ftest.file?"))
     }
 
@@ -2168,8 +2444,9 @@ mod test {
     fn test_presign_delete() {
         let s3_path = "/test/test.file";
         let bucket = test_aws_bucket();
+        let client = make_client();
 
-        let url = bucket.presign_delete(s3_path, 86400).unwrap();
+        let url = bucket.presign_delete(&client, s3_path, 86400).unwrap();
         assert!(url.contains("/test%2Ftest.file?"))
     }
 
@@ -2183,8 +2460,10 @@ mod test {
     )]
     #[ignore]
     async fn test_bucket_create_delete_default_region() {
+        let client = make_client();
         let config = BucketConfiguration::default();
         let response = Bucket::create(
+            &client,
             &uuid::Uuid::new_v4().to_string(),
             "us-east-1".parse().unwrap(),
             test_aws_credentials(),
@@ -2197,7 +2476,7 @@ mod test {
 
         assert_eq!(response.response_code, 200);
 
-        let response_code = response.bucket.delete().await.unwrap();
+        let response_code = response.bucket.delete(&client).await.unwrap();
         assert!(response_code < 300);
     }
 
@@ -2211,8 +2490,11 @@ mod test {
         )
     )]
     async fn test_bucket_create_delete_non_default_region() {
+        let client = make_client();
+
         let config = BucketConfiguration::default();
         let response = Bucket::create(
+            &client,
             &uuid::Uuid::new_v4().to_string(),
             "eu-central-1".parse().unwrap(),
             test_aws_credentials(),
@@ -2225,7 +2507,7 @@ mod test {
 
         assert_eq!(response.response_code, 200);
 
-        let response_code = response.bucket.delete().await.unwrap();
+        let response_code = response.bucket.delete(&client).await.unwrap();
         assert!(response_code < 300);
     }
 
@@ -2239,8 +2521,10 @@ mod test {
         )
     )]
     async fn test_bucket_create_delete_non_default_region_public() {
+        let client = make_client();
         let config = BucketConfiguration::public();
         let response = Bucket::create(
+            &client,
             &uuid::Uuid::new_v4().to_string(),
             "eu-central-1".parse().unwrap(),
             test_aws_credentials(),
@@ -2253,7 +2537,7 @@ mod test {
 
         assert_eq!(response.response_code, 200);
 
-        let response_code = response.bucket.delete().await.unwrap();
+        let response_code = response.bucket.delete(&client).await.unwrap();
         assert!(response_code < 300);
     }
 
