@@ -138,6 +138,7 @@ pub fn set_request_timeout(timeout: Option<Duration>) {
 }
 
 /// Sends a GET request to `url` with a request timeout if one was set.
+#[cfg(feature = "http")]
 fn http_get(url: &str) -> attohttpc::Result<attohttpc::Response> {
     let mut builder = attohttpc::get(url);
 
@@ -150,6 +151,7 @@ fn http_get(url: &str) -> attohttpc::Result<attohttpc::Response> {
 }
 
 impl Credentials {
+    #[cfg(feature = "http")]
     pub fn from_sts_env(session_name: &str) -> Result<Credentials> {
         let role_arn = env::var("AWS_ROLE_ARN")?;
         let web_identity_token_file = env::var("AWS_WEB_IDENTITY_TOKEN_FILE")?;
@@ -157,6 +159,7 @@ impl Credentials {
         Credentials::from_sts(&role_arn, session_name, &web_identity_token)
     }
 
+    #[cfg(feature = "http")]
     pub fn from_sts(
         role_arn: &str,
         session_name: &str,
@@ -200,6 +203,7 @@ impl Credentials {
         })
     }
 
+    #[cfg(feature = "http")]
     pub fn default() -> Result<Credentials> {
         Credentials::new(None, None, None, None, None)
     }
@@ -215,6 +219,7 @@ impl Credentials {
 
     /// Initialize Credentials directly with key ID, secret key, and optional
     /// token.
+    #[cfg(feature = "http")]
     pub fn new(
         access_key: Option<&str>,
         secret_key: Option<&str>,
@@ -260,6 +265,7 @@ impl Credentials {
         Credentials::from_env_specific(None, None, None, None)
     }
 
+    #[cfg(feature = "http")]
     pub fn from_instance_metadata() -> Result<Credentials> {
         #[derive(Deserialize)]
         #[serde(rename_all = "PascalCase")]

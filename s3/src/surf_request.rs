@@ -1,6 +1,5 @@
 use async_std::io::ReadExt;
 use std::io::Write;
-use std::borrow::Cow;
 
 use super::bucket::Bucket;
 use super::command::Command;
@@ -18,7 +17,7 @@ use surf::Client;
 
 // Temporary structure for making a request
 pub struct SurfRequest<'a> {
-    pub client: Cow<'a, Client>,
+    pub client: &'a Client,
     pub bucket: &'a Bucket,
     pub path: &'a str,
     pub command: Command<'a>,
@@ -125,19 +124,6 @@ impl<'a> Request for SurfRequest<'a> {
     }
 }
 
-impl<'a> SurfRequest<'a> {
-    pub fn new<'b>(bucket: &'b Bucket, path: &'b str, command: Command<'b>) -> SurfRequest<'b> {
-        SurfRequest {
-            client: Cow::Owned(surf::Client::new()),
-            bucket,
-            path,
-            command,
-            datetime: Utc::now(),
-            sync: false,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::bucket::Bucket;
@@ -146,6 +132,7 @@ mod tests {
     use crate::surf_request::SurfRequest;
     use anyhow::Result;
     use awscreds::Credentials;
+    use chrono::Utc;
 
     // Fake keys - otherwise using Credentials::default will use actual user
     // credentials if they exist.
@@ -160,7 +147,15 @@ mod tests {
         let region = "custom-region".parse()?;
         let bucket = Bucket::new("my-first-bucket", region, fake_credentials())?;
         let path = "/my-first/path";
-        let request = SurfRequest::new(&bucket, path, Command::GetObject);
+        let client = surf::Client::new();
+        let request = SurfRequest {
+            client: &client,
+            bucket: &bucket,
+            path,
+            command: Command::GetObject,
+            datetime: Utc::now(),
+            sync: false,
+        };
 
         assert_eq!(request.url().scheme(), "https");
 
@@ -176,7 +171,15 @@ mod tests {
         let region = "custom-region".parse()?;
         let bucket = Bucket::new_with_path_style("my-first-bucket", region, fake_credentials())?;
         let path = "/my-first/path";
-        let request = SurfRequest::new(&bucket, path, Command::GetObject);
+        let client = surf::Client::new();
+        let request = SurfRequest {
+            client: &client,
+            bucket: &bucket,
+            path,
+            command: Command::GetObject,
+            datetime: Utc::now(),
+            sync: false,
+        };
 
         assert_eq!(request.url().scheme(), "https");
 
@@ -192,7 +195,15 @@ mod tests {
         let region = "http://custom-region".parse()?;
         let bucket = Bucket::new("my-second-bucket", region, fake_credentials())?;
         let path = "/my-second/path";
-        let request = SurfRequest::new(&bucket, path, Command::GetObject);
+        let client = surf::Client::new();
+        let request = SurfRequest {
+            client: &client,
+            bucket: &bucket,
+            path,
+            command: Command::GetObject,
+            datetime: Utc::now(),
+            sync: false,
+        };
 
         assert_eq!(request.url().scheme(), "http");
 
@@ -207,7 +218,15 @@ mod tests {
         let region = "http://custom-region".parse()?;
         let bucket = Bucket::new_with_path_style("my-second-bucket", region, fake_credentials())?;
         let path = "/my-second/path";
-        let request = SurfRequest::new(&bucket, path, Command::GetObject);
+        let client = surf::Client::new();
+        let request = SurfRequest {
+            client: &client,
+            bucket: &bucket,
+            path,
+            command: Command::GetObject,
+            datetime: Utc::now(),
+            sync: false,
+        };
 
         assert_eq!(request.url().scheme(), "http");
 
