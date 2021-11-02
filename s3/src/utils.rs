@@ -16,7 +16,9 @@ use async_std::path::Path;
 use std::path::Path;
 
 #[cfg(feature = "with-async-std")]
-use futures_io::{AsyncRead, AsyncReadExt};
+use async_std::io::ReadExt;
+#[cfg(feature = "with-async-std")]
+use futures_io::AsyncRead;
 #[cfg(feature = "sync")]
 use std::io::Read;
 #[cfg(feature = "with-tokio")]
@@ -118,8 +120,8 @@ impl GetAndConvertHeaders for http::header::HeaderMap {
     }
 }
 
-impl From<&http::HeaderMap> for HeadObjectResult {
-    fn from(headers: &http::HeaderMap) -> Self {
+impl From<http::HeaderMap> for HeadObjectResult {
+    fn from(headers: http::HeaderMap) -> Self {
         let mut result = HeadObjectResult {
             accept_ranges: headers.get_string("accept-ranges"),
             cache_control: headers.get_string("Cache-Control"),
