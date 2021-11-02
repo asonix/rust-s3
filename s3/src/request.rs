@@ -1,8 +1,6 @@
 extern crate base64;
 extern crate md5;
 
-use std::borrow::Cow;
-
 use chrono::{DateTime, Utc};
 use maybe_async::maybe_async;
 use reqwest::{Client, Response};
@@ -18,7 +16,7 @@ use tokio_stream::StreamExt;
 
 // Temporary structure for making a request
 pub struct Reqwest<'a> {
-    pub client: Cow<'a, reqwest::Client>,
+    pub client: &'a Client,
     pub bucket: &'a Bucket,
     pub path: &'a str,
     pub command: Command<'a>,
@@ -129,42 +127,6 @@ impl<'a> Request for Reqwest<'a> {
     }
 }
 
-impl<'a> Reqwest<'a> {
-    pub fn new<'b>(bucket: &'b Bucket, path: &'b str, command: Command<'b>) -> Reqwest<'b> {
-        Reqwest {
-            client: Cow::Owned(Self::build_client()),
-            bucket,
-            path,
-            command,
-            datetime: Utc::now(),
-            sync: false,
-        }
-    }
-
-    fn build_client() -> reqwest::Client {
-        #[allow(unused_mut)]
-        let mut client_builder = Client::builder();
-
-        if cfg!(feature = "no-verify-ssl") {
-            cfg_if::cfg_if! {
-                if #[cfg(feature = "tokio-native-tls")]
-                {
-                    client_builder = client_builder.danger_accept_invalid_hostnames(true)
-                }
-            }
-
-            cfg_if::cfg_if! {
-                if #[cfg(any(feature = "tokio-native-tls", feature = "tokio-rustls-tls"))]
-                {
-                    client_builder = client_builder.danger_accept_invalid_certs(true);
-                }
-            }
-        }
-
-        client_builder.build().expect("Could not build client!")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::bucket::Bucket;
@@ -173,6 +135,7 @@ mod tests {
     use crate::request_trait::Request;
     use anyhow::Result;
     use awscreds::Credentials;
+    use chrono::Utc;
     use http::header::{HOST, RANGE};
 
     // Fake keys - otherwise using Credentials::default will use actual user
@@ -188,7 +151,18 @@ mod tests {
         let region = "custom-region".parse()?;
         let bucket = Bucket::new("my-first-bucket", region, fake_credentials())?;
         let path = "/my-first/path";
-        let request = Reqwest::new(&bucket, path, Command::GetObject);
+        let client = reqwest::Client::new();
+        let request = Reqwest {
+            client: &client,
+            bucket: &bucket,
+            path,
+            command: Command::GetObjectRange {
+                start: 0,
+                end: None,
+            },
+            datetime: Utc::now(),
+            sync: false,
+        };
 
         assert_eq!(request.url().scheme(), "https");
 
@@ -204,7 +178,18 @@ mod tests {
         let region = "custom-region".parse()?;
         let bucket = Bucket::new_with_path_style("my-first-bucket", region, fake_credentials())?;
         let path = "/my-first/path";
-        let request = Reqwest::new(&bucket, path, Command::GetObject);
+        let client = reqwest::Client::new();
+        let request = Reqwest {
+            client: &client,
+            bucket: &bucket,
+            path,
+            command: Command::GetObjectRange {
+                start: 0,
+                end: None,
+            },
+            datetime: Utc::now(),
+            sync: false,
+        };
 
         assert_eq!(request.url().scheme(), "https");
 
@@ -220,7 +205,18 @@ mod tests {
         let region = "http://custom-region".parse()?;
         let bucket = Bucket::new("my-second-bucket", region, fake_credentials())?;
         let path = "/my-second/path";
-        let request = Reqwest::new(&bucket, path, Command::GetObject);
+        let client = reqwest::Client::new();
+        let request = Reqwest {
+            client: &client,
+            bucket: &bucket,
+            path,
+            command: Command::GetObjectRange {
+                start: 0,
+                end: None,
+            },
+            datetime: Utc::now(),
+            sync: false,
+        };
 
         assert_eq!(request.url().scheme(), "http");
 
@@ -235,7 +231,18 @@ mod tests {
         let region = "http://custom-region".parse()?;
         let bucket = Bucket::new_with_path_style("my-second-bucket", region, fake_credentials())?;
         let path = "/my-second/path";
-        let request = Reqwest::new(&bucket, path, Command::GetObject);
+        let client = reqwest::Client::new();
+        let request = Reqwest {
+            client: &client,
+            bucket: &bucket,
+            path,
+            command: Command::GetObjectRange {
+                start: 0,
+                end: None,
+            },
+            datetime: Utc::now(),
+            sync: false,
+        };
 
         assert_eq!(request.url().scheme(), "http");
 
@@ -252,26 +259,34 @@ mod tests {
         let bucket = Bucket::new_with_path_style("my-second-bucket", region, fake_credentials())?;
         let path = "/my-second/path";
 
-        let request = Reqwest::new(
-            &bucket,
+        let client = reqwest::Client::new();
+        let request = Reqwest {
+            client: &client,
+            bucket: &bucket,
             path,
-            Command::GetObjectRange {
+            command: Command::GetObjectRange {
                 start: 0,
                 end: None,
             },
-        );
+            datetime: Utc::now(),
+            sync: false,
+        };
         let headers = request.headers().unwrap();
         let range = headers.get(RANGE).unwrap();
         assert_eq!(range, "bytes=0-");
 
-        let request = Reqwest::new(
-            &bucket,
+        let client = reqwest::Client::new();
+        let request = Reqwest {
+            client: &client,
+            bucket: &bucket,
             path,
-            Command::GetObjectRange {
+            command: Command::GetObjectRange {
                 start: 0,
                 end: Some(1),
             },
-        );
+            datetime: Utc::now(),
+            sync: false,
+        };
         let headers = request.headers().unwrap();
         let range = headers.get(RANGE).unwrap();
         assert_eq!(range, "bytes=0-1");
